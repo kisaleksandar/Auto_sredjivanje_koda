@@ -62,7 +62,7 @@ SemaphoreHandle_t RXC_BS_0, RXC_BS_1, RXC_BS_2; //sta je ovo??????
 SemaphoreHandle_t RX_senzori_semafor;
 SemaphoreHandle_t seg7_ispis;
 SemaphoreHandle_t mutex_serijska;  //vrv ne treba
-SemaphoreHandle_t s1;  // vrv ne treba 
+//SemaphoreHandle_t s1;  // vrv ne treba 
 SemaphoreHandle_t serijska_stanje; // vrv ne treba
 
 TimerHandle_t per_TimerHandle;
@@ -82,7 +82,7 @@ static QueueHandle_t serijska_prijem_niz = NULL;
 static QueueHandle_t serijska_prijem_duzina = NULL;
 static QueueHandle_t stanje_sistema = NULL; //vrv nde treba
 
-/* Strukture za redove 
+ /*Strukture za redove 
 typedef struct seg7_podaci { //svi potrebni podaci za ispis na 7-segmentni displej   
 	
 	uint8_t start1;
@@ -90,16 +90,16 @@ typedef struct seg7_podaci { //svi potrebni podaci za ispis na 7-segmentni displ
 }seg7_podaci;  */
 
 
-typedef struct podaci_za_stanje { //svi potrebni podaci za formiranje poruke za stanje
+/*typedef struct podaci_za_stanje { //svi potrebni podaci za formiranje poruke za stanje
 	double vrednost_sa_senzora;
 	uint8_t start;
-}podaci_za_stanje;
+}podaci_za_stanje;*/
 
 
-typedef struct ispis_serijska_info { //svi potrebni podaci za ispis na serijsku
+/*typedef struct ispis_serijska_info { //svi potrebni podaci za ispis na serijsku
 	uint8_t duzina_stringa;
 	uint8_t poruka[60];
-}ispis_serijska_info;
+}ispis_serijska_info;  */
 
 
 /* OPC - ON INPUT CHANGE - INTERRUPT HANDLER */      // POGLEDATI NA FREERTOS.ORG
@@ -216,7 +216,7 @@ void main_demo( void )
 	/* Ostali semafori */
 	RX_senzori_semafor = xSemaphoreCreateBinary();
 	mutex_serijska = xSemaphoreCreateMutex();
-	s1 = xSemaphoreCreateBinary();
+	//s1 = xSemaphoreCreateBinary();
 	seg7_ispis = xSemaphoreCreateBinary();
 	serijska_stanje = xSemaphoreCreateBinary();
 
@@ -304,7 +304,7 @@ void led_bar_tsk(void* pvParameters) //ocitati prekidace i reci da li je ukljuce
 				}
 				else { //kada se ispise posljednji karakter, onda resetuj sistem i daj semafor da je ispis rijeci zavrsen
 					t_point = 0;
-					xSemaphoreGive(s1);
+					//xSemaphoreGive(s1);
 					duzina_niza_ispis = 0;
 				}
 			}
@@ -435,7 +435,7 @@ void obrada_podataka_task(void* pvParameters)
 	uint8_t pomocni_niz[60] = { 0 }; 
 	uint8_t duzina_niza_ispis = 0;
 
-	uint8_t podaci_za_stanje[2] = { 0 };
+	//uint8_t podaci_za_stanje[2] = { 0 };
 
 	while (1)
 	{
@@ -457,7 +457,7 @@ void obrada_podataka_task(void* pvParameters)
 				xQueueSend(stanje_sistema, &start, pdMS_TO_TICKS(20));
 				xQueueSend(seg7_auto_queue, &start, pdMS_TO_TICKS(20));
 				send_serial_character(COM_CH2, 13);
-				xSemaphoreTake(s1, portMAX_DELAY);
+				//xSemaphoreTake(s1, portMAX_DELAY);
 				xSemaphoreGive(mutex_serijska);
 			
 		}
@@ -474,7 +474,7 @@ void obrada_podataka_task(void* pvParameters)
 			xQueueSend(serijska_ispis_queue, &pomocni_niz, 0U);
 			xQueueSend(serijska_ispis_duzina, &duzina_niza_ispis, 0U);
 			send_serial_character(COM_CH2, 13);
-			xSemaphoreTake(s1, portMAX_DELAY);
+			//xSemaphoreTake(s1, portMAX_DELAY);
 			xSemaphoreGive(mutex_serijska);
 		}
 
@@ -620,7 +620,7 @@ void Serijska_stanje_task(void* pvParameters) { /*formiramo niz za redovan ispis
 		
 
 		send_serial_character(COM_CH2, 13);
-		xSemaphoreTake(s1, portMAX_DELAY);
+		//xSemaphoreTake(s1, portMAX_DELAY);
 		xSemaphoreGive(mutex_serijska);
 	}
 }
