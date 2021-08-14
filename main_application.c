@@ -30,7 +30,7 @@ void led_bar_tsk( void *pvParameters ); //ocitavanje sa led bara
 void SerialSend_Task(void* pvParameters); //ispis na serijsku 
 void SerialReceive_Task(void* pvParameters); //prijem komandi sa serijske
 void prijem_sa_senzora_tsk(void* pvParameters); //odredjivanje trenutne temperature i minimalne i maksimalne izmjerene temperature...modifikovati??
-void obrada_podataka_task(void* pvParameters); 
+//void obrada_podataka_task(void* pvParameters); 
 void Primio_kanal_0(void* pvParameters); //prijem sa senzora 1
 void Primio_kanal_1(void* pvParameters); //prijem sa senzora 2 
 void Seg7_ispis_task(void* pvParameters); //ispisivanje trazenih informacija na 7-segmentni displej
@@ -61,7 +61,7 @@ SemaphoreHandle_t TBE_BS_0, TBE_BS_1, TBE_BS_2;
 SemaphoreHandle_t RXC_BS_0, RXC_BS_1, RXC_BS_2; //sta je ovo??????
 SemaphoreHandle_t RX_senzori_semafor;
 SemaphoreHandle_t seg7_ispis;
-SemaphoreHandle_t mutex_serijska;  //vrv ne treba
+//SemaphoreHandle_t mutex_serijska;  //vrv ne treba
 //SemaphoreHandle_t s1;  // vrv ne treba 
 SemaphoreHandle_t serijska_stanje; // vrv ne treba
 
@@ -215,7 +215,7 @@ void main_demo( void )
 
 	/* Ostali semafori */
 	RX_senzori_semafor = xSemaphoreCreateBinary();
-	mutex_serijska = xSemaphoreCreateMutex();
+	//mutex_serijska = xSemaphoreCreateMutex();
 	//s1 = xSemaphoreCreateBinary();
 	seg7_ispis = xSemaphoreCreateBinary();
 	serijska_stanje = xSemaphoreCreateBinary();
@@ -250,7 +250,7 @@ void main_demo( void )
 	/* create a led bar TASK */
 	xTaskCreate(led_bar_tsk, "ST",	configMINIMAL_STACK_SIZE, NULL, SERVICE_TASK_PRI, NULL);
 	xTaskCreate(prijem_sa_senzora_tsk, "senzori", configMINIMAL_STACK_SIZE, NULL, SENZORI_PRI, NULL);
-	xTaskCreate(obrada_podataka_task, "obrada", configMINIMAL_STACK_SIZE, NULL, OBRADA_TASK_PRI, NULL);
+	//xTaskCreate(obrada_podataka_task, "obrada", configMINIMAL_STACK_SIZE, NULL, OBRADA_TASK_PRI, NULL);
 	xTaskCreate(Primio_kanal_0, "kanal0", configMINIMAL_STACK_SIZE, NULL, TASK_SERIAl_REC_PRI, NULL);
 	xTaskCreate(Primio_kanal_1, "kanal1", configMINIMAL_STACK_SIZE, NULL, TASK_SERIAl_REC_PRI, NULL);
 	xTaskCreate(Seg7_ispis_task, "Seg_7", configMINIMAL_STACK_SIZE, NULL, SERVICE_TASK_PRI, NULL);
@@ -274,16 +274,14 @@ void led_bar_tsk(void* pvParameters) //ocitati prekidace i reci da li je ukljuce
 		if ((d & 0x01) != 0) { //provjeri da li je pritisnut prvi prekidac na led baru, ako jeste, ukljuci sistem, ako nije, iskljucen sistem
 				set_LED_BAR(1, 0x01);
 				start = 1;
-				xQueueSend(stanje_sistema, &start, pdMS_TO_TICKS(20));
-				xQueueSend(seg7_auto_queue, &start, pdMS_TO_TICKS(20));
 		}
 		else {
 			set_LED_BAR(1, 0x00);
 			start = 0;
-			xQueueSend(stanje_sistema, &start, pdMS_TO_TICKS(20));
-			xQueueSend(seg7_auto_queue, &start, pdMS_TO_TICKS(20));
-			
 		}
+
+		xQueueSend(stanje_sistema, &start, 0U);
+		xQueueSend(seg7_auto_queue, &start, 0U);
 
     }
 }
@@ -400,6 +398,8 @@ void SerialReceive_Task(void* pvParameters) //prima komandnu rijec koja se zavrs
 {
 	uint8_t r_point = 0;
 	uint8_t r_buffer[12];
+	uint8_t start = 0;
+	uint8_t startovanje = 0;
 	uint8_t cc = 0;
 	uint8_t duzina_primljene_rijeci = 0;
 
@@ -407,7 +407,8 @@ void SerialReceive_Task(void* pvParameters) //prima komandnu rijec koja se zavrs
 	{
 		xSemaphoreTake(RXC_BS_2, portMAX_DELAY);// ceka na serijski prijemni interapt
 		get_serial_character(COM_CH2, &cc);//ucitava primljeni karakter u promenjivu cc        OVDE KUCA NPR START I STOP
-
+		xQueueReceive(stanje_sistema, &startovanje, pdMS_TO_TICKS(20));
+		start = startovanje;
 
 		if (cc == 0x0d) // oznaciti kraj poruke i ako je kraj, preko reda poslati informacije o poruci i restartovati ovaj taks
 		{
@@ -420,11 +421,29 @@ void SerialReceive_Task(void* pvParameters) //prima komandnu rijec koja se zavrs
 		{
 			r_buffer[r_point++] = cc; 
 		}
+
+		if ((duzina_primljene_rijeci == sizeof("START") - 1) && (strncmp(r_buffer, ("START"), duzina_primljene_rijeci) == 0) && start == 0) {
+			
+			set_LED_BAR(1, 0x01);
+			printf("Dobro uneseno START \n");
+			start = 1;
+		}
+
+		else if ((duzina_primljene_rijeci == sizeof("STOP") - 1) && (strncmp(r_buffer, ("STOP"), duzina_primljene_rijeci) == 0) && start == 1) {
+
+			set_LED_BAR(1, 0x00);
+			printf("Dobro uneseno STOP \n");
+			start = 0;
+
+		}
+
+		xQueueSend(stanje_sistema, &start, 0U);
+
 	}
 }
 
 
-void obrada_podataka_task(void* pvParameters)
+/*void obrada_podataka_task(void* pvParameters)
 {
 	uint8_t r_buffer[12] = { 0 };
 	uint8_t duzina_primljene_rijeci = 0;
@@ -440,8 +459,9 @@ void obrada_podataka_task(void* pvParameters)
 	while (1)
 	{
 
-		xQueueReceive(serijska_prijem_duzina, &duzina_primljene_rijeci, pdMS_TO_TICKS(20)); //primi komandnu poruku
-		xQueueReceive(serijska_prijem_niz, &r_buffer, pdMS_TO_TICKS(20)); //primi duzinu komandne poruke
+		//xQueueReceive(serijska_prijem_duzina, &duzina_primljene_rijeci, pdMS_TO_TICKS(20)); //primi komandnu poruku
+		//xQueueReceive(serijska_prijem_niz, &r_buffer, pdMS_TO_TICKS(20)); //primi duzinu komandne poruke
+		xQueueReceive(stanje_sistema, &start, pdMS_TO_TICKS(20));
 
 
 		if ((duzina_primljene_rijeci == sizeof("START") - 1) && (strncmp(r_buffer, ("START"), duzina_primljene_rijeci) == 0) && start == 0) {
@@ -449,16 +469,16 @@ void obrada_podataka_task(void* pvParameters)
 			    start = 1;
 				printf("Dobro uneseno START \n");
 
-				xSemaphoreTake(mutex_serijska, portMAX_DELAY);
-				strcpy(pomocni_niz, "OK START");
-				duzina_niza_ispis = sizeof("OK START") - 1;
-				xQueueSend(serijska_ispis_queue, &pomocni_niz, 0U);
-				xQueueSend(serijska_ispis_duzina, &duzina_niza_ispis, 0U);
+				//xSemaphoreTake(mutex_serijska, portMAX_DELAY);
+				//strcpy(pomocni_niz, "OK START");
+				//duzina_niza_ispis = sizeof("OK START") - 1;
+				//xQueueSend(serijska_ispis_queue, &pomocni_niz, 0U);
+				//xQueueSend(serijska_ispis_duzina, &duzina_niza_ispis, 0U);
 				xQueueSend(stanje_sistema, &start, pdMS_TO_TICKS(20));
 				xQueueSend(seg7_auto_queue, &start, pdMS_TO_TICKS(20));
 				send_serial_character(COM_CH2, 13);
 				//xSemaphoreTake(s1, portMAX_DELAY);
-				xSemaphoreGive(mutex_serijska);
+				//xSemaphoreGive(mutex_serijska);
 			
 		}
 
@@ -468,14 +488,16 @@ void obrada_podataka_task(void* pvParameters)
 			start=0;
 			printf("Dobro uneseno STOP\n");
 
-			xSemaphoreTake(mutex_serijska, portMAX_DELAY);
-			strcpy(pomocni_niz, "OK STOP");
-			duzina_niza_ispis = sizeof("OK STOP") - 1;
-			xQueueSend(serijska_ispis_queue, &pomocni_niz, 0U);
-			xQueueSend(serijska_ispis_duzina, &duzina_niza_ispis, 0U);
-			send_serial_character(COM_CH2, 13);
+			//xSemaphoreTake(mutex_serijska, portMAX_DELAY);
+			//strcpy(pomocni_niz, "OK STOP");
+			//duzina_niza_ispis = sizeof("OK STOP") - 1;
+			//xQueueSend(serijska_ispis_queue, &pomocni_niz, 0U);
+			//xQueueSend(serijska_ispis_duzina, &duzina_niza_ispis, 0U);
+	        xQueueSend(stanje_sistema, &start, pdMS_TO_TICKS(20));
+			xQueueSend(seg7_auto_queue, &start, pdMS_TO_TICKS(20));
+			//send_serial_character(COM_CH2, 13);
 			//xSemaphoreTake(s1, portMAX_DELAY);
-			xSemaphoreGive(mutex_serijska);
+			//xSemaphoreGive(mutex_serijska);
 		}
 
 
@@ -488,7 +510,7 @@ void obrada_podataka_task(void* pvParameters)
 		//podaci_za_stanje[1] = start1;
 		//xQueueSend(stanje_formiranje, &podaci_za_stanje, 0U);
 
-}
+}*/
 
 void Seg7_ispis_task(void* pvParameters) {
 	
@@ -546,12 +568,12 @@ void Serijska_stanje_task(void* pvParameters) { /*formiramo niz za redovan ispis
 		xQueueReceive(queue_kalibracija, &prijem_kalibracije, pdMS_TO_TICKS(20));
 		xQueueReceive(stanje_sistema, &start, pdMS_TO_TICKS(20));
 
-		
-
 		kalibracija1 = prijem_kalibracije[0];
 		kalibracija2 = prijem_kalibracije[1];
 
-		xSemaphoreTake(mutex_serijska, portMAX_DELAY);
+		
+
+		//xSemaphoreTake(mutex_serijska, portMAX_DELAY);
 
 		strcpy(pomocni_niz, "Stanje: ");
 		duzina_niza_ispis = sizeof("Stanje: ") - 1;
@@ -621,6 +643,6 @@ void Serijska_stanje_task(void* pvParameters) { /*formiramo niz za redovan ispis
 
 		send_serial_character(COM_CH2, 13);
 		//xSemaphoreTake(s1, portMAX_DELAY);
-		xSemaphoreGive(mutex_serijska);
+		//xSemaphoreGive(mutex_serijska);
 	}
 }
