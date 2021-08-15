@@ -1,4 +1,4 @@
-/* Standard includes. */
+﻿/* Standard includes. */
 #include <stdio.h>
 #include <conio.h>
 #include <string.h>
@@ -27,6 +27,7 @@
 
 /* TASKS: FORWARD DECLARATIONS */
 void led_bar_tsk( void *pvParameters ); //ocitavanje sa led bara
+void LED_bar_Task(void* pvParameters); //generisanje signala(blinkanje diode)
 void SerialSend_Task(void* pvParameters); //ispis na serijsku 
 void SerialReceive_Task(void* pvParameters); //prijem komandi sa serijske
 void Primio_kanal_0(void* pvParameters); //prijem sa senzora 1
@@ -72,6 +73,8 @@ static QueueHandle_t queue_senzor1 = NULL;
 static QueueHandle_t queue_senzor2 = NULL;
 static QueueHandle_t queue_kalibracija1 = NULL;
 static QueueHandle_t queue_kalibracija2 = NULL;
+static QueueHandle_t queue_kalibracija3 = NULL;
+static QueueHandle_t queue_kalibracija4 = NULL;
 static QueueHandle_t serijska_prijem_niz = NULL;
 static QueueHandle_t serijska_prijem_duzina = NULL;
 static QueueHandle_t stanje_sistema = NULL; //vrv nde treba
@@ -140,7 +143,7 @@ void main_demo( void )
 {
 	init_7seg_comm();
 	init_LED_comm();
-	init_serial_uplink(COM_CH);  // inicijalizacija serijske TX na kanalu 0         POGLEDATI
+	init_serial_uplink(COM_CH);  // inicijalizacija serijske TX na kanalu 0         
 	init_serial_downlink(COM_CH);// inicijalizacija serijske TX na kanalu 0
 	init_serial_uplink(COM_CH1);
 	init_serial_downlink(COM_CH1);
@@ -179,8 +182,8 @@ void main_demo( void )
 	RXC_BS_2 = xSemaphoreCreateBinary();
 
 	/* Ostali semafori */
-	seg7_ispis = xSemaphoreCreateBinary();
-	serijska_stanje = xSemaphoreCreateBinary();
+	seg7_ispis = xSemaphoreCreateBinary(); // KREIRAM SEMAFOR KOJI SE POSLE TAJMEROM GIVUJE SVAKIM 200mS TASKU SEG7 DISPLEJ, OSVEZAVAMO DISPEL SVAKIH 200mS
+	serijska_stanje = xSemaphoreCreateBinary(); // SEMAFOR KOJI SE GIVUJE SVAKIH 5 SEKUNDI ZA ISPIS STANJA NA KANALU 2
 
 	/* SERIAL TRANSMISSION INTERRUPT HANDLER */
 	vPortSetInterruptHandler(portINTERRUPT_SRL_TBE, prvProcessTBEInterrupt);
@@ -190,7 +193,7 @@ void main_demo( void )
 	
 	/* Kreiranje redova za komunikaciju izmedju taskova */
 
-	seg7_auto_queue = xQueueCreate(2, sizeof(uint8_t));
+	seg7_auto_queue = xQueueCreate(2, sizeof(uint8_t)); // SMESTAMO KOMANDU START/STOP
 	
 	
 	serijska_ispis_queue = xQueueCreate(3, sizeof(uint8_t [60])); //red za skladistenje poruke za ispis
@@ -199,21 +202,28 @@ void main_demo( void )
 	serijska_prijem_niz = xQueueCreate(3, sizeof(uint8_t[12])); //red za skladistenje primljene rijeci (komande)
 	serijska_prijem_duzina = xQueueCreate(3, sizeof(uint8_t)); //red za skladistenje duzine primljene rijeci
 
+
+	/*QUEUE-OVI ZA SKLADISTANJE VREDNOSTI SA SENZORA I KALIBRACIJU
+	RAZLOG ZASTO IMAM PO DVA QUEUE-A ZA KALIBRACIJE JE U SINHORONIZACIJI TASKOVA*/
 	queue_senzor1 = xQueueCreate(2, sizeof(double)); //red za primanje vrijednosti sa senzora 1
 	queue_senzor2 = xQueueCreate(2, sizeof(double)); //red za primanje vrijednosti sa senzora 2
-	queue_kalibracija1 = xQueueCreate(2, sizeof(double));
-	queue_kalibracija2 = xQueueCreate(2, sizeof(double));//red za smestanje vrednosti obe kalibracije
+	queue_kalibracija1 = xQueueCreate(2, sizeof(double));//red za primenje kalibrisane vrednosti sa senzora 1
+	queue_kalibracija2 = xQueueCreate(2, sizeof(double));//red za primenje kalibrisane vrednosti sa senzora 2
+	queue_kalibracija3 = xQueueCreate(2, sizeof(double));//red za primenje kalibrisane vrednosti sa senzora 1
+	queue_kalibracija4 = xQueueCreate(2, sizeof(double));////red za primenje kalibrisane vrednosti sa senzora 2
 
-	stanje_sistema = xQueueCreate(1, sizeof(uint8_t));
+	/*QUEUE U KOJI SE SMEŠTAJU START/STOP KOMANDE*/
+	stanje_sistema = xQueueCreate(1, sizeof(uint8_t));//PRIMA 0 ILI 1 U ZAVISNOSTI DA LI SISTEM AKTIVAN (1) ILI UGAŠEN (0)
 
-	/* create a led bar TASK */
-	xTaskCreate(led_bar_tsk, "ST",	configMINIMAL_STACK_SIZE, NULL, SERVICE_TASK_PRI, NULL);
-	xTaskCreate(Primio_kanal_0, "kanal0", configMINIMAL_STACK_SIZE, NULL, TASK_SERIAl_REC_PRI, NULL);
-	xTaskCreate(Primio_kanal_1, "kanal1", configMINIMAL_STACK_SIZE, NULL, TASK_SERIAl_REC_PRI, NULL);
-	xTaskCreate(Seg7_ispis_task, "Seg_7", configMINIMAL_STACK_SIZE, NULL, SERVICE_TASK_PRI, NULL);
-	xTaskCreate(Serijska_stanje_task, "Stanje", configMINIMAL_STACK_SIZE, NULL, OBRADA_TASK_PRI, NULL);
+	// KREIRAMO TASKOVE
+	xTaskCreate(led_bar_tsk, "ST",	configMINIMAL_STACK_SIZE, NULL, SERVICE_TASK_PRI, NULL);// TASK ZA PROVERU DA LI JE PRITISNUT PREKIDAČ
+	xTaskCreate(Primio_kanal_0, "kanal0", configMINIMAL_STACK_SIZE, NULL, TASK_SERIAl_REC_PRI, NULL);//TASK ZA PRIJEM SA KANALA 0
+	xTaskCreate(Primio_kanal_1, "kanal1", configMINIMAL_STACK_SIZE, NULL, TASK_SERIAl_REC_PRI, NULL);//TASK ZA PRIJEM SA KANALA 1
+	xTaskCreate(Seg7_ispis_task, "Seg_7", configMINIMAL_STACK_SIZE, NULL, SERVICE_TASK_PRI, NULL);//TASK ZA ISPIS NA SEG7 DISPLEJ
+	xTaskCreate(Serijska_stanje_task, "Stanje", configMINIMAL_STACK_SIZE, NULL, OBRADA_TASK_PRI, NULL);// TASK ZA ISPIS NA KANAL 2
+	xTaskCreate(LED_bar_Task, "LEtsk", configMINIMAL_STACK_SIZE, NULL, OBRADA_TASK_PRI, NULL);  //TASK ZA BLINKANJE DIODA(GENERISANJE SIGNALA)
 
-	vTaskStartScheduler();
+	vTaskStartScheduler(); // OVAJ RADI KAD SVI OSTALI NISU AKTIVNI
 
 	while (1);
 }
@@ -263,36 +273,96 @@ void led_bar_tsk(void* pvParameters) //ocitati prekidace i reci da li je ukljuce
 				}
 			}
 		}
+        
+		//Void LED_bar_Task se koristi za blinkanje diodoma, u zavisnosti od vrednosti kalibracija tj. zone detekcije 
+		void LED_bar_Task(void* pvParameters) {
+			double kalibracija3 = 0, kalibracija4 = 0; // kalibracija1 <=> kalibracija3 , kalibracija 2 <=> kalibracija4
+			                                           // u ove dve promenljive smestamo kalibrisane vrednosti sa senzora
 
-void Primio_kanal_0(void* pvParameters) //prijem sa kanala 0 (senzor 1), kada stigne karakter za kraj poruke, onda ono ispred pretvori u float
-{ //i posalji preko reda tasku za ocitavanje senzora
-	double senzor1 = 0;
-	uint8_t cc = 0;
-	uint8_t br_karaktera = 0;
-	double kalibracija1 = 0;
+			while (1) {
+
+				xQueueReceive(queue_kalibracija3, &kalibracija3, pdMS_TO_TICKS(20)); // smestanje kalibrasane vrednosti sa senzora 1 
+				xQueueReceive(queue_kalibracija4, &kalibracija4, pdMS_TO_TICKS(20)); // smestanje kalibrasane vrednosti sa senzora 1 
+
+				if (kalibracija3 > 50 && kalibracija3 <= 100 ) { // Generisemo signal frekvencije 1Hz, polovinu periode ce svetleti gornje
+					set_LED_BAR(2, 0xF0);                        // cetiri diode treceg stubca, a zatim pola periode ce biti ugasene
+					vTaskDelay(pdMS_TO_TICKS(500));              // time dobijamo blinkanje frekvencijom 1Hz, ukoliko se objekat detektovan
+					set_LED_BAR(2, 0x00);                        // senzorom 1 nalazi u zoni UDALJENA_DETEKCIJA 
+					vTaskDelay(pdMS_TO_TICKS(500));
+				}
+
+				else if (kalibracija3 > 0 && kalibracija3 <= 50) { // Generisemo signal frekvencije 2Hz, polovinu periode ce svetleti gornje
+					set_LED_BAR(2, 0xF0);                          // cetiri diode treceg stubca, a zatim pola periode ce biti ugasene
+					vTaskDelay(pdMS_TO_TICKS(250));                // time dobijamo blinkanje frekvencijom 2Hz, ukoliko se objekat detektovan
+					set_LED_BAR(2, 0x00);                          // senzorom 1 nalazi u zoni BLISKA_DETEKCIJA 
+					vTaskDelay(pdMS_TO_TICKS(250));
+				}
+
+				else if (kalibracija3 < 0 ) {                       // Generisemo signal frekvencije 2Hz, celu periodu se svetleti gornje
+					set_LED_BAR(2, 0xF0);                           // cetiri diode treceg stubca, ukoliko se objekat detektovan senzorom 1
+					vTaskDelay(pdMS_TO_TICKS(500));                 // nalazi u zoni KONTAKT_DETEKCIJA
+					set_LED_BAR(2, 0x00);
+				}
+
+				if (kalibracija4 > 50 && kalibracija4 <= 100) {	   // Generisemo signal frekvencije 1Hz, polovinu periode ce svetleti gornje
+					set_LED_BAR(3, 0xF0);                          // cetiri diode treceg stubca, a zatim pola periode ce biti ugasene             
+					vTaskDelay(pdMS_TO_TICKS(500));                // time dobijamo blinkanje frekvencijom 1Hz, ukoliko se objekat detektovan
+					set_LED_BAR(3, 0x00);                          // senzorom 2 u zoni DALEKA_DETEKCIJA
+					vTaskDelay(pdMS_TO_TICKS(500));
+				}
+
+				else if (kalibracija4 > 0 && kalibracija4 <= 50) { // Generisemo signal frekvencije 2Hz, polovinu periode ce svetleti gornje
+					set_LED_BAR(3, 0xF0);                          // cetiri diode treceg stubca, a zatim pola periode ce biti ugasene
+					vTaskDelay(pdMS_TO_TICKS(250));                // time dobijamo blinkanje frekvencijom 2Hz, ukoliko se objekat detektovan
+					set_LED_BAR(3, 0x00);                          // senzorom 2 u zoni BLISKA_DETEKCIJA
+					vTaskDelay(pdMS_TO_TICKS(250));
+				}
+
+				else if (kalibracija4 < 0) {                       // Generisemo signal frekvencije 2Hz, celu periodu se svetleti gornje
+					set_LED_BAR(3, 0xF0);                          // cetiri diode treceg stubca, ukoliko se objekat detektovan senzorom 2
+					vTaskDelay(pdMS_TO_TICKS(500));                // nalazi u zoni KONTAKT_DETEKCIJA
+					set_LED_BAR(3, 0x00);                          
+				}
+
+
+			}
+			
+
+
+
+
+		}
+
+void Primio_kanal_0(void* pvParameters) //prijem sa kanala 0 (senzor 1)
+{ 
+	double senzor1 = 0;   // promeljiva u koju smestamo vrednosti primljene sa kanala 0, ali konverovane u float
+	uint8_t cc = 0;   // prvo se primljeno sa kanala nula smesta u ovu promenljivu
+	uint8_t br_karaktera = 0; //sluzi nam da se pomeramo kroz niz rastojanje_kanal0[6], ako je stigao karakter za kraj poruke, resetuje se na 0
+	double kalibracija1 = 0; // promenljiva u koju smestamo kalibrisanu vrednost primljenu sa kanala 0
 	uint8_t rastojanje_kanal0[6] = { 0 }; // rastajoanje sa senzora 1
-	double min = 20, max = 100;
+	double min = 20, max = 100; // minimalne i maksimalne vrednosti, potrebne za kalibraciju
 
 	while (1) {
-		xSemaphoreTake(RXC_BS_0, portMAX_DELAY);
-		get_serial_character(COM_CH, &cc);
+		xSemaphoreTake(RXC_BS_0, portMAX_DELAY); // uzima semafor
+		get_serial_character(COM_CH, &cc);  // smesta karaktere primljene sa kanala 0 u promenljivu cc
 		//printf("primio kanal 0 %u\n", (unsigned)cc);
-		if (cc == 0x0d) {
-			senzor1 = atof(rastojanje_kanal0);
-			br_karaktera = 0;
-			xQueueSend(queue_senzor1, &senzor1, 0U);
-			kalibracija1 = 100 * (senzor1 - min) / (max - min);
-			xQueueSend(queue_kalibracija1, &kalibracija1, 0U);
+		if (cc == 0x0d) {  // ako je u promeljivu cc stigao karakter 0x0d, to je signal za kraj poruke i vrednost dobijena sa kanala 0 se moze obradjivati
+			senzor1 = atof(rastojanje_kanal0); // pomocu funkcije atof, pretvaramo string u float
+			br_karaktera = 0; // resetujemo broj karaktera na 0, da bi mogli uspesno da obradjuemo naredne poruke
+			xQueueSend(queue_senzor1, &senzor1, 0U); // vrednosti sa kanala 0, konvertovane u float, smestano u red queue_senzor1
+			kalibracija1 = 100 * (senzor1 - min) / (max - min); // racunamo kalibraciju, i smestamo je u promenljivu kalibracija1
+			xQueueSend(queue_kalibracija1, &kalibracija1, 0U); // vrednost kalibracije 1 saljemo u queue_kalibracija1, ovaj queue kasnije receivujemo u Serijska_stanje_task da bi mogli na serijskoj da ispisujemo na serijskoj trenutno stanje kalibracije1
+			xQueueSend(queue_kalibracija3, &kalibracija1, 0U); // ovaj queue receivujemo u tasku LED_bar_Task, koji nam sluzi za generisanje signala(blinkanje dioda odredjenom frekvecijom)
 		}
 		else {
-			rastojanje_kanal0[br_karaktera++] = cc;
+			rastojanje_kanal0[br_karaktera++] = cc; // redom iz cc smestamo karakter po karakter u niz rastojanje_kanala dok ne stigne 0x0d 
 		}
 
 
 	}
 }
 
-void Primio_kanal_1(void* pvParameters) //isti task kao primio_kanal_0 samo je ovo sa kanala 1 sto simulira drugi senzor
+void Primio_kanal_1(void* pvParameters) //POTUPNO IDENTICNA PRICA KAO TASK Primio_kanal_0!!! Samo ovde sa kanala 1, simuliramo senzor 2!!!
 {
 	double senzor2 = 0;
 	uint8_t cc = 0;
@@ -311,6 +381,7 @@ void Primio_kanal_1(void* pvParameters) //isti task kao primio_kanal_0 samo je o
 			br_karaktera = 0;
 			kalibracija2 = 100 * (senzor2 - min) / (max - min);
 			xQueueSend(queue_kalibracija2, &kalibracija2, 0U);
+			xQueueSend(queue_kalibracija4, &kalibracija2, 0U);
 		}
 		else {
 			rastojanje_kanal1[br_karaktera++] = cc;
@@ -319,71 +390,78 @@ void Primio_kanal_1(void* pvParameters) //isti task kao primio_kanal_0 samo je o
 	}
 }
 
-void SerialReceive_Task(void* pvParameters) //prima komandnu rijec koja se zavrsava karakterom 13(0x0d) i prosljedjuje je tasku obrada_podataka
+void SerialReceive_Task(void* pvParameters) //kanal 2, prima komandnu rijec koja se zavrsava karakterom 13(0x0d)
 {
-	uint8_t r_point = 0;
-	uint8_t r_buffer[12];
-	uint8_t start = 0;
-	uint8_t startovanje = 0;
-	uint8_t cc = 0;
-	uint8_t duzina_primljene_rijeci = 0;
+	uint8_t r_point = 0;  //za pomeranje kroz niz r_buffer
+	uint8_t r_buffer[12]; //smestamo primljeno komandu
+	uint8_t start = 0; //treba nam za START/STOP 
+	uint8_t startovanje = 0; // pomocna promeljiva, mislim da nije potrebna, al nesto kao da bez nje nije htelo lepo da radi NEMAM OBJASNJENJE
+	uint8_t cc = 0;  // ovde se direktno iz kanala smesta primljemo iz kanala0, i karakter po karakter posme smesta u r_buffer
+	uint8_t duzina_primljene_rijeci = 0; //duzinu primljene reci smestamo ovde, da kasnije mozemo proveriti koja je rec stigla
 
 	while (1)
 	{
 		xSemaphoreTake(RXC_BS_2, portMAX_DELAY);// ceka na serijski prijemni interapt
-		get_serial_character(COM_CH2, &cc);//ucitava primljeni karakter u promenjivu cc        OVDE KUCA NPR START I STOP
-		xQueueReceive(stanje_sistema, &startovanje, pdMS_TO_TICKS(20));
-		start = startovanje;
+		get_serial_character(COM_CH2, &cc);//ucitava primljeni karakter u promenjivu cc        
+		xQueueReceive(stanje_sistema, &startovanje, pdMS_TO_TICKS(20)); // ovo nam treba zbog START/STOP
+		start = startovanje; // realno glupsot, al kao da bolje radi vako
 
 		if (cc == 0x0d) // oznaciti kraj poruke i ako je kraj, preko reda poslati informacije o poruci i restartovati ovaj taks
 		{
 			duzina_primljene_rijeci = r_point; 
-			xQueueSend(serijska_prijem_niz, &r_buffer, 0U);
-			xQueueSend(serijska_prijem_duzina, &r_point, 0U);
-			r_point = 0;
+			xQueueSend(serijska_prijem_niz, &r_buffer, 0U); // saljemo niz u queue koji kasnije koristimo za ispis
+			xQueueSend(serijska_prijem_duzina, &r_point, 0U); // saljemo duzinu tog niza, isto nam treba za ispis
+			r_point = 0; // reset na nulu, da bi mogli uspesno ponovo da obradjujemo primljene poruke
 		}
 		else if (r_point < R_BUF_SIZE)// pamti karaktere prije FF 
 		{
-			r_buffer[r_point++] = cc; 
+			r_buffer[r_point++] = cc; // sve iz cc smestamo u niz r_buffer
+		}
+		//ovim if-om proveravamo da li je stigla prava rec, takodje proveravamo da li sistem vec upaljen,
+		//ako jeste da se ne pali opet(apsurd), zato u uslovu stoji da je start==0, jer sistem treba da je prvo logicno UGASEN da bi se 
+		//upalio
+		if ((duzina_primljene_rijeci == sizeof("START") - 1) && (strncmp(r_buffer, ("START"), duzina_primljene_rijeci) == 0) && start == 0) { 
+			
+			set_LED_BAR(1, 0x01);// palimo indikacionu diodu, drugi stubac, prva od dole.
+			printf("Dobro uneseno START \n");//ispisujemo na terminal da je korisnik uneo dobru komandu
+			start = 1; // palimo sistem
 		}
 
-		if ((duzina_primljene_rijeci == sizeof("START") - 1) && (strncmp(r_buffer, ("START"), duzina_primljene_rijeci) == 0) && start == 0) {
-			
-			set_LED_BAR(1, 0x01);
-			printf("Dobro uneseno START \n");
-			start = 1;
-		}
+		//Slicna prica i sa ovim else if, samo se ovde proverava stop, i proveramo da li je sistem upaljen da bi ga gasili
 
 		else if ((duzina_primljene_rijeci == sizeof("STOP") - 1) && (strncmp(r_buffer, ("STOP"), duzina_primljene_rijeci) == 0) && start == 1) {
 
-			set_LED_BAR(1, 0x00);
-			printf("Dobro uneseno STOP \n");
-			start = 0;
+			set_LED_BAR(1, 0x00);//gasimo indikacionu diodu
+			printf("Dobro uneseno STOP \n");//obavestavamo korisnika da je ukucao dobru komandu
+			start = 0; // gasimo sistem
 
 		}
 
-		xQueueSend(stanje_sistema, &start, 0U);
-		xQueueSend(seg7_auto_queue, &start, 0U);
-
+		xQueueSend(stanje_sistema, &start, 0U); // saljemo u queue stanje_sistema koja je komanda aktivirana, ovaj queue sluzi za task Serijska_stanje_task
+		xQueueSend(seg7_auto_queue, &start, 0U); // saljemo u queue seg7_auto_queue koja je komanda aktivirana, ovaj queue sluzi za Seg7_ispis(nisam siguran da je to bas ime taska)
+		//razlog zasto imam dva reda, za istu stvar, je sinhronizacija izmedju taskova koja se poremeti ako koristim isti queue.
 	}
 }
 
 
 
-void Seg7_ispis_task(void* pvParameters) {
+void Seg7_ispis_task(void* pvParameters) { // TASK ZA ISPIS NA SEG7 DISPLEJU
+	                                       // NA SEG7 DISPLEJU ISPISUJEMO, NA PRVOM SEGMETU 0(AKO JE SISTEM UGASEN), ILI 1 (AKO JE SISTEM AKTIVIRAN)
+											// SLEDECA TRI SEGMENTA, ISPISUJEMO VREDNOST SA SENZORA 1(NEKALIBRISANU)
+	                                        // SLEDECA TRI SEGMENTA, ISPISUJEMO VREDNOST SA SENZORA 2
 	
-	double senzor1=0, senzor2=0;
-	uint8_t start = 0;
+	double senzor1=0, senzor2=0;  // promenljive za smestanje vrednost sa senzora
+	uint8_t start = 0; // promeljiva za smestanje vrednosti start/stop
 	
 	while (1) {
-		xSemaphoreTake(seg7_ispis, portMAX_DELAY);
+		xSemaphoreTake(seg7_ispis, portMAX_DELAY); // ceka semafor, osvezava se displej svakih 200ms
 		
-		xQueueReceive(seg7_auto_queue, &start, pdMS_TO_TICKS(20));
-		xQueueReceive(queue_senzor1, &senzor1, pdMS_TO_TICKS(20));
-		xQueueReceive(queue_senzor2, &senzor2, pdMS_TO_TICKS(20));
+		xQueueReceive(seg7_auto_queue, &start, pdMS_TO_TICKS(20)); // start/stop komanda se risivuje 
+		xQueueReceive(queue_senzor1, &senzor1, pdMS_TO_TICKS(20)); // vrednost sa senzora 1 se risivuje
+		xQueueReceive(queue_senzor2, &senzor2, pdMS_TO_TICKS(20)); // vrednost sa senzora 2 se risivuje
 	
 
-		if (start) { //na prvu cifru ispisuje 1 ako je rezim rada start1, a 0 ako je stop
+		if (start) { //na prvu cifru ispisuje 1 ako je rezim rada start, a 0 ako je stop
 			select_7seg_digit(0);
 			set_7seg_digit(hexnum[1]);
 		}
@@ -391,67 +469,69 @@ void Seg7_ispis_task(void* pvParameters) {
 			select_7seg_digit(0);
 			set_7seg_digit(hexnum[0]);
 		}
-
+		//ispis vrednosti senzora
 		select_7seg_digit(1); //
-		set_7seg_digit(hexnum[(uint8_t)senzor1 / 100]);
+		set_7seg_digit(hexnum[(uint8_t)senzor1 / 100]); // JEDINICA
 		select_7seg_digit(2);
-		set_7seg_digit(hexnum[((uint8_t)senzor1 / 10) % 10]);
+		set_7seg_digit(hexnum[((uint8_t)senzor1 / 10) % 10]); // DESETICA
 		select_7seg_digit(3); //
-		set_7seg_digit(hexnum[(uint8_t)senzor1 % 10]);
+		set_7seg_digit(hexnum[(uint8_t)senzor1 % 10]); // STOTINA
 		select_7seg_digit(4);
-		set_7seg_digit(hexnum[(uint8_t)senzor2 / 100]);
+		set_7seg_digit(hexnum[(uint8_t)senzor2 / 100]); // JEDINICA
 		select_7seg_digit(5);
-		set_7seg_digit(hexnum[((uint8_t)senzor2 / 10) % 10]);
-		select_7seg_digit(6);
-		set_7seg_digit(hexnum[(uint8_t)senzor2 % 10]);
+		set_7seg_digit(hexnum[((uint8_t)senzor2 / 10) % 10]); //DESETICA
+		select_7seg_digit(6); 
+		set_7seg_digit(hexnum[(uint8_t)senzor2 % 10]); // STOTINA
 		
 	}
 }
 
-
+// OVAJ POSLEDNJI TASK MOZDA I NIJE POTREBAN, U NJEMU FAKTICKI PRIPREMAMO PORUKU I SALJEMO JE PREKO QUEUE-A TASKU KOJI CE JE ISPISATI GDE TREBA
+// ALI I SA OVIM TASKOM SISTEM RADI KO DOXA
 void Serijska_stanje_task(void* pvParameters) { /*formiramo niz za redovan ispis stanja sistema i saljemo pomocu reda poruku i duzinu poruke
 												tasku za ispis na serijsku*/
-	uint8_t pomocni_niz[60] = { 0 };
-	uint8_t duzina_niza_ispis = 0;
-	uint8_t start = 0;
-	double kalibracija1=0, kalibracija2=0;
-	double prijem_kalibracije[2] = { 0 };
+	uint8_t pomocni_niz[60] = { 0 }; // POMOCNI NIZ U KOJI SMESTAMO KOMPLETNU PORUKU ZA SLANJE NA SERIJSKU KANALA 2
+	uint8_t duzina_niza_ispis = 0; // POMOCNA PROMENLJIVA POMOCU KOJE SALJEMO DUZINU TOG NIZA
+	uint8_t start = 0; // START/STOP
+	double kalibracija1=0, kalibracija2=0; // PROMELJIVE U KOJE CEMO DA RISIVUJEMO VREDNOSTI KALIBRACIJE
+	double prijem_kalibracije[2] = { 0 }; //BESPOTREBNO!
 
 	while (1) {
-		xSemaphoreTake(serijska_stanje, portMAX_DELAY);
+		xSemaphoreTake(serijska_stanje, portMAX_DELAY); // UZIMA SEMAFOR SVAKIH 5 SEKUNDI 
 
-		xQueueReceive(queue_kalibracija1, &kalibracija1, pdMS_TO_TICKS(20));
-		xQueueReceive(queue_kalibracija2, &kalibracija2, pdMS_TO_TICKS(20));
-		xQueueReceive(stanje_sistema, &start, pdMS_TO_TICKS(20));
+		xQueueReceive(queue_kalibracija1, &kalibracija1, pdMS_TO_TICKS(20)); // RISIVUJE VREDNOST KALIBRACIJE 1
+		xQueueReceive(queue_kalibracija2, &kalibracija2, pdMS_TO_TICKS(20)); // RISIVUJE VREDNOST KALIBRACIJE 2
+		xQueueReceive(stanje_sistema, &start, pdMS_TO_TICKS(20)); // RISIVUJE KOMANDU START/STOP
 
 	
-		strcpy(pomocni_niz, "Stanje: ");
-		duzina_niza_ispis = sizeof("Stanje: ") - 1;
+		strcpy(pomocni_niz, "Stanje: "); // PRVO U NIZ pomocni_niz SMESTAMO(KOPIRAMO) "Stanje:" 
+		duzina_niza_ispis = sizeof("Stanje: ") - 1; // OVDE U PROMENLJIVU DUZINA_NIZA_ISPIS SMESTAMO KOLIKO JE TRENUTNO DUGACAK NIZ POMOCNI_NIZ
 
-		if (start) {
-			strcat(pomocni_niz, "START");
-			duzina_niza_ispis += sizeof("START") - 1;
+		if (start) { //AKO JE AKTIVAN START NA Stanje: nadovezi START
+			strcat(pomocni_niz, "START");//POMOCU FUNKCIJE strcat mi cemo "START" da 'priljubimo' uz Stanje: i to ce izgledati na terminalu Stanje:START
+			duzina_niza_ispis += sizeof("START") - 1; //u duzinu_niza_ispis sumiramo i broj karaktera komande START
 		}
 		else {
-			strcat(pomocni_niz, "STOP");
+			strcat(pomocni_niz, "STOP"); // SLICNO KAO IZNAD, SAMO JE U PITANJU STOP
 			duzina_niza_ispis += sizeof("STOP") - 1;
 		}
 	
-		if (start) {
+		if (start) {// SLUZI NAM ZA PRIKAZIVANJE KALIBRACIJE
 
-			strcat(pomocni_niz, ", K1:");
-			duzina_niza_ispis += sizeof(", K1:") - 1;
-			pomocni_niz[duzina_niza_ispis++] = (unsigned)kalibracija1 / 100 + '0';
+			strcat(pomocni_niz, ", K1:"); //U POMOCNI NIZ PRILJUBIMO OVO
+			duzina_niza_ispis += sizeof(", K1:") - 1; // SUMIRAMO U DUZINU
+			pomocni_niz[duzina_niza_ispis++] = (unsigned)kalibracija1 / 100 + '0'; // I ONDA SE REDOM POMERAMO PO POMOCNOM NIZU I SMESTAMO CIFRU PO CIFRU KALIRBACIJE 1
 			pomocni_niz[duzina_niza_ispis++] = (((unsigned)kalibracija1 / 10) % 10) + '0';
 			pomocni_niz[duzina_niza_ispis++] = (unsigned)kalibracija1 % 10 + '0';
 
 
-			strcat(pomocni_niz, ", K2:");
+			strcat(pomocni_niz, ", K2:"); // ISTA PRICA KAO ZA K1
 			duzina_niza_ispis += sizeof(", K2:") - 1;
 			pomocni_niz[duzina_niza_ispis++] = (unsigned)kalibracija2 / 100 + '0';
 			pomocni_niz[duzina_niza_ispis++] = (((unsigned)kalibracija2 / 10) % 10) + '0';
 			pomocni_niz[duzina_niza_ispis++] = (unsigned)kalibracija2 % 10 + '0';
 
+			//OVDE SALJEMO NA TERMINAL ZONU DETEKCIJE, POPRILICNO INTUITIVNO, NECU KOMENTARISATI SVAKU LINIKU KODA
 			if (kalibracija1 > 100) {
 				printf("LEVI SENZOR: NEMA DETEKCIJE\n");
 			}
