@@ -27,7 +27,8 @@
 
 /* TASKS: FORWARD DECLARATIONS */
 void led_bar_tsk( void *pvParameters ); //ocitavanje sa led bara
-void LED_bar_Task(void* pvParameters); //generisanje signala(blinkanje diode)
+void LED_bar_Task1 (void* pvParameters);
+void LED_bar_Task2 (void* pvParameters);//generisanje signala(blinkanje diode)
 void SerialSend_Task(void* pvParameters); //ispis na serijsku 
 void SerialReceive_Task(void* pvParameters); //prijem komandi sa serijske
 void Primio_kanal_0(void* pvParameters); //prijem sa senzora 1
@@ -221,7 +222,8 @@ void main_demo( void )
 	xTaskCreate(Primio_kanal_1, "kanal1", configMINIMAL_STACK_SIZE, NULL, TASK_SERIAl_REC_PRI, NULL);//TASK ZA PRIJEM SA KANALA 1
 	xTaskCreate(Seg7_ispis_task, "Seg_7", configMINIMAL_STACK_SIZE, NULL, SERVICE_TASK_PRI, NULL);//TASK ZA ISPIS NA SEG7 DISPLEJ
 	xTaskCreate(Serijska_stanje_task, "Stanje", configMINIMAL_STACK_SIZE, NULL, OBRADA_TASK_PRI, NULL);// TASK ZA ISPIS NA KANAL 2
-	xTaskCreate(LED_bar_Task, "LEtsk", configMINIMAL_STACK_SIZE, NULL, OBRADA_TASK_PRI, NULL);  //TASK ZA BLINKANJE DIODA(GENERISANJE SIGNALA)
+	xTaskCreate(LED_bar_Task1, "LEtsk1", configMINIMAL_STACK_SIZE, NULL, OBRADA_TASK_PRI, NULL);  //TASK ZA BLINKANJE DIODA(GENERISANJE SIGNALA)
+	xTaskCreate(LED_bar_Task2, "LEtsk2", configMINIMAL_STACK_SIZE, NULL, OBRADA_TASK_PRI, NULL);
 
 	vTaskStartScheduler(); // OVAJ RADI KAD SVI OSTALI NISU AKTIVNI
 
@@ -274,44 +276,59 @@ void led_bar_tsk(void* pvParameters) //ocitati prekidace i reci da li je ukljuce
 			}
 		}
         
-		//Void LED_bar_Task se koristi za blinkanje diodoma, u zavisnosti od vrednosti kalibracija tj. zone detekcije 
-		void LED_bar_Task(void* pvParameters) {
-			double kalibracija3 = 0, kalibracija4 = 0; // kalibracija1 <=> kalibracija3 , kalibracija 2 <=> kalibracija4
+		//Void LED_bar_Task1 se koristi za blinkanje diodoma, u zavisnosti od vrednosti KALIBRACIJE 1 tj. zone detekcije 
+		void LED_bar_Task1(void* pvParameters) {
+			double kalibracija3 = 0;// kalibracija1 <=> kalibracija3 , kalibracija 2 <=> kalibracija4
 			                                           // u ove dve promenljive smestamo kalibrisane vrednosti sa senzora
 
 			while (1) {
 
 				xQueueReceive(queue_kalibracija3, &kalibracija3, pdMS_TO_TICKS(20)); // smestanje kalibrasane vrednosti sa senzora 1 
-				xQueueReceive(queue_kalibracija4, &kalibracija4, pdMS_TO_TICKS(20)); // smestanje kalibrasane vrednosti sa senzora 1 
+				 
 
-				if (kalibracija3 > 50 && kalibracija3 <= 100 ) { // Generisemo signal frekvencije 1Hz, polovinu periode ce svetleti gornje
+				if (kalibracija3 > 50 && kalibracija3 <= 100 ) {
+					printf("LEVI SENZOR: DALEKA DETEKCIJA\n");// Generisemo signal frekvencije 1Hz, polovinu periode ce svetleti gornje
 					set_LED_BAR(2, 0xF0);                        // cetiri diode treceg stubca, a zatim pola periode ce biti ugasene
 					vTaskDelay(pdMS_TO_TICKS(500));              // time dobijamo blinkanje frekvencijom 1Hz, ukoliko se objekat detektovan
 					set_LED_BAR(2, 0x00);                        // senzorom 1 nalazi u zoni UDALJENA_DETEKCIJA 
 					vTaskDelay(pdMS_TO_TICKS(500));
 				}
 
-				else if (kalibracija3 > 0 && kalibracija3 <= 50) { // Generisemo signal frekvencije 2Hz, polovinu periode ce svetleti gornje
+				else if (kalibracija3 > 0 && kalibracija3 <= 50) {
+					printf("LEVI SENZOR: BLISKA DETEKCIJA\n");// Generisemo signal frekvencije 2Hz, polovinu periode ce svetleti gornje
 					set_LED_BAR(2, 0xF0);                          // cetiri diode treceg stubca, a zatim pola periode ce biti ugasene
 					vTaskDelay(pdMS_TO_TICKS(250));                // time dobijamo blinkanje frekvencijom 2Hz, ukoliko se objekat detektovan
 					set_LED_BAR(2, 0x00);                          // senzorom 1 nalazi u zoni BLISKA_DETEKCIJA 
 					vTaskDelay(pdMS_TO_TICKS(250));
 				}
 
-				else if (kalibracija3 < 0 ) {                       // Generisemo signal frekvencije 2Hz, celu periodu se svetleti gornje
+				else if (kalibracija3 < 0 ) {  
+					printf("LEVI SENZOR: KONTAKT DETEKCIJA\n");// Generisemo signal frekvencije 2Hz, celu periodu se svetleti gornje
 					set_LED_BAR(2, 0xF0);                           // cetiri diode treceg stubca, ukoliko se objekat detektovan senzorom 1
 					vTaskDelay(pdMS_TO_TICKS(500));                 // nalazi u zoni KONTAKT_DETEKCIJA
 					set_LED_BAR(2, 0x00);
 				}
 
-				if (kalibracija4 > 50 && kalibracija4 <= 100) {	   // Generisemo signal frekvencije 1Hz, polovinu periode ce svetleti gornje
+			}
+
+		}
+
+		void LED_bar_Task2(void* pvParameters) {
+			double kalibracija4 = 0;
+
+			while (1) {
+				xQueueReceive(queue_kalibracija4, &kalibracija4, pdMS_TO_TICKS(20));
+
+				if (kalibracija4 > 50 && kalibracija4 <= 100) {
+					printf("DESNI SENZOR: DALEKA DETEKCIJA\n");      // Generisemo signal frekvencije 1Hz, polovinu periode ce svetleti gornje
 					set_LED_BAR(3, 0xF0);                          // cetiri diode treceg stubca, a zatim pola periode ce biti ugasene             
 					vTaskDelay(pdMS_TO_TICKS(500));                // time dobijamo blinkanje frekvencijom 1Hz, ukoliko se objekat detektovan
 					set_LED_BAR(3, 0x00);                          // senzorom 2 u zoni DALEKA_DETEKCIJA
 					vTaskDelay(pdMS_TO_TICKS(500));
 				}
 
-				else if (kalibracija4 > 0 && kalibracija4 <= 50) { // Generisemo signal frekvencije 2Hz, polovinu periode ce svetleti gornje
+				else if (kalibracija4 > 0 && kalibracija4 <= 50) {
+					printf("DESNI SENZOR: BLISKA DETEKCIJA\n");	   // Generisemo signal frekvencije 2Hz, polovinu periode ce svetleti gornje
 					set_LED_BAR(3, 0xF0);                          // cetiri diode treceg stubca, a zatim pola periode ce biti ugasene
 					vTaskDelay(pdMS_TO_TICKS(250));                // time dobijamo blinkanje frekvencijom 2Hz, ukoliko se objekat detektovan
 					set_LED_BAR(3, 0x00);                          // senzorom 2 u zoni BLISKA_DETEKCIJA
@@ -319,18 +336,13 @@ void led_bar_tsk(void* pvParameters) //ocitati prekidace i reci da li je ukljuce
 				}
 
 				else if (kalibracija4 < 0) {                       // Generisemo signal frekvencije 2Hz, celu periodu se svetleti gornje
+					printf("DESNI SENZOR: KONTAKT DETEKCIJA\n");
 					set_LED_BAR(3, 0xF0);                          // cetiri diode treceg stubca, ukoliko se objekat detektovan senzorom 2
 					vTaskDelay(pdMS_TO_TICKS(500));                // nalazi u zoni KONTAKT_DETEKCIJA
-					set_LED_BAR(3, 0x00);                          
+					set_LED_BAR(3, 0x00);
 				}
 
-
 			}
-			
-
-
-
-
 		}
 
 void Primio_kanal_0(void* pvParameters) //prijem sa kanala 0 (senzor 1)
@@ -531,43 +543,11 @@ void Serijska_stanje_task(void* pvParameters) { /*formiramo niz za redovan ispis
 			pomocni_niz[duzina_niza_ispis++] = (((unsigned)kalibracija2 / 10) % 10) + '0';
 			pomocni_niz[duzina_niza_ispis++] = (unsigned)kalibracija2 % 10 + '0';
 
-			//OVDE SALJEMO NA TERMINAL ZONU DETEKCIJE, POPRILICNO INTUITIVNO, NECU KOMENTARISATI SVAKU LINIKU KODA
-			if (kalibracija1 > 100) {
-				printf("LEVI SENZOR: NEMA DETEKCIJE\n");
-			}
-
-			else if (kalibracija1 <= 100 && kalibracija1 > 50) {
-				printf("LEVI SENZOR: ZONA DETEKCIJE\n");
-			}
-
-			else if (kalibracija1 <= 50 && kalibracija1 > 0) {
-				printf("LEVI SENZOR: BLISKA DETEKCIJA\n");
-			}
-			else if (kalibracija1 <= 0) {
-				printf("LEVI SENZOR: KONTAKT DETEKCIJA\n");
-			}
-
-			if (kalibracija2 > 100) {
-				printf("DESNI SENZOR: NEMA DETEKCIJE\n");
-			}
-
-			else if (kalibracija2 <= 100 && kalibracija2 > 50) {
-				printf("DESNI SENZOR: ZONA DETEKCIJE\n");
-			}
-
-			else if (kalibracija2 <= 50 && kalibracija2 > 0) {
-				printf("DESNI SENZOR: BLISKA DETEKCIJA\n");
-			}
-			else if (kalibracija2 <= 0) {
-				printf("DESNI SENZOR: KONTAKT DETEKCIJA\n");
-			}
-
 		}
 
 			xQueueSend(serijska_ispis_queue, &pomocni_niz, 0U);
 			xQueueSend(serijska_ispis_duzina, &duzina_niza_ispis, 0U);
-
-		send_serial_character(COM_CH2, 13);
+           	send_serial_character(COM_CH2, 13);
 
 	}
 }
