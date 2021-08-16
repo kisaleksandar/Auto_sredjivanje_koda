@@ -53,9 +53,9 @@ static const char hexnum[] = { 0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07,
 /* GLOBAL OS-HANDLES */
 SemaphoreHandle_t LED_INT_BinarySemaphore;
 SemaphoreHandle_t TBE_BS_0, TBE_BS_1, TBE_BS_2;
-SemaphoreHandle_t RXC_BS_0, RXC_BS_1, RXC_BS_2; //sta je ovo??????
+SemaphoreHandle_t RXC_BS_0, RXC_BS_1, RXC_BS_2; 
 SemaphoreHandle_t seg7_ispis;
-SemaphoreHandle_t serijska_stanje; // vrv ne treba
+SemaphoreHandle_t serijska_stanje; 
 
 TimerHandle_t per_TimerHandle;
 TimerHandle_t ispis_podaci_tajmer;
