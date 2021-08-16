@@ -365,14 +365,14 @@ void Primio_kanal_0(void* pvParameters) //prijem sa kanala 0 (senzor 1)
 	uint8_t br_karaktera = 0; //sluzi nam da se pomeramo kroz niz rastojanje_kanal0[6], ako je stigao karakter za kraj poruke, resetuje se na 0
 	double kalibracija1_local = 0;  // promenljiva u koju smestamo kalibrisanu vrednost primljenu sa kanala 0
 	uint8_t rastojanje_kanal0[6] = { 0 }; // rastajoanje sa senzora 1
-	uint8_t min = 20, max = 100; // minimalne i maksimalne vrednosti, potrebne za kalibraciju
+	double min = 20, max = 100; // minimalne i maksimalne vrednosti, potrebne za kalibraciju
 
 	for (;;) {
 		xSemaphoreTake(RXC_BS_0, portMAX_DELAY); // uzima semafor
 		get_serial_character(COM_CH, &cc);  // smesta karaktere primljene sa kanala 0 u promenljivu cc
 		//printf("primio kanal 0 %u\n", (unsigned)cc);
 		if (cc == 0x0d) {  // ako je u promeljivu cc stigao karakter 0x0d, to je signal za kraj poruke i vrednost dobijena sa kanala 0 se moze obradjivati
-			senzor1 = atof(rastojanje_kanal0); // pomocu funkcije atof, pretvaramo string u float
+			senzor1 = atof(rastojanje_kanal0); // pomocu funkcije atof, pretvaramo string u float PREMA MISRA PRAVILU 21.7 NE BI TREBALO DA SE KORISTI ATOF
 			br_karaktera = 0; // resetujemo broj karaktera na 0, da bi mogli uspesno da obradjuemo naredne poruke
 			xQueueSend(queue_senzor1, &senzor1, 0U); // vrednosti sa kanala 0, konvertovane u float, smestano u red queue_senzor1
 			kalibracija1_local = 100 * (senzor1 - min) / (max - min);  // racunamo kalibraciju, i smestamo je u promenljivu kalibracija1
@@ -392,7 +392,7 @@ void Primio_kanal_1(void* pvParameters) //POTUPNO IDENTICNA PRICA KAO TASK Primi
 	double senzor2 = 0;
 	uint8_t cc = 0;
 	double kalibracija2_local = 0;
-	uint8_t min = 20, max = 100;
+	double min = 20, max = 100; // posto ovo oduzimamo od senzor, trebalo bi da bude istog tipa kao i senzor2(double)
 	uint8_t br_karaktera = 0;
 	uint8_t rastojanje_kanal1[6] = { 0 };
 
